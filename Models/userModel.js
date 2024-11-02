@@ -7,8 +7,8 @@ const userSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     phoneNumber: { type: String, required: true },
     birthDate: { type: Date },
-    username: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
+    username: { type: String,unique: true },
+    password: { type: String },
     role: { type: String, enum: ['user', 'admin'], default: 'user' }, // Placeholder for future roles
     // Additional fields for future expansion
     canListItems: { type: Boolean, default: true },
