@@ -1,68 +1,56 @@
-const User = require('../Models/userModel');
+// controllers/userController.js
+const User = require('../models/userModel');
 const bcrypt = require('bcrypt');
-const validator = require('validator');
 const jwt = require('jsonwebtoken');
 
+const SALT_ROUNDS = 10;
 
 exports.signup = async (req, res) => {
     try {
-        
         const { firstName, lastName, email, password, phone, birthDate } = req.body;
 
-        
-        if (!firstName || !lastName || !email || !password || !phone || !birthDate) {
-            return res.status(400).json({ message: 'All fields are required.' });
-        }
-
-        
-        if (!validator.isEmail(email)) {
-            return res.status(400).json({ message: 'Invalid email format.' });
-        }
-
-        
-        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$/;
-        if (!passwordRegex.test(password)) {
-            return res.status(400).json({ message: 'Password must be at least 6 characters, include uppercase, lowercase, a digit, and a special character.' });
-        }
-
-        
-        const phoneRegex = /^[0-9]{10,15}$/;
-        if (!phoneRegex.test(phone)) {
-            return res.status(400).json({ message: 'Invalid phone number format. Only digits allowed.' });
-        }
-
-        
-        if (!validator.isDate(birthDate) || new Date(birthDate) >= new Date()) {
-            return res.status(400).json({ message: 'Invalid birth date. Please enter a valid date in the past.' });
-        }
-
-        
-        const existingUser = await User.findOne({ email });
+        // Check if user exists
+        const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
-            return res.status(400).json({ message: 'User already exists' });
+            return res.status(409).json({ message: 'Email already registered' });
         }
 
-        
-        const hashedPassword = await bcrypt.hash(password, 10);
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
-        
+        // Create new user
         const newUser = new User({
-            firstName,
-            lastName,
-            email,
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            email: email.toLowerCase(),
             password: hashedPassword,
             phone,
             birthDate,
+            createdAt: new Date()
         });
 
-        
         await newUser.save();
 
-        
-        res.status(201).json({ message: 'User created successfully' });
+        // Generate token
+        const token = jwt.sign(
+            { userId: newUser._id },
+            process.env.JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        res.status(201).json({
+            message: 'User created successfully',
+            token,
+            user: {
+                id: newUser._id,
+                firstName: newUser.firstName,
+                lastName: newUser.lastName,
+                email: newUser.email
+            }
+        });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        console.error('Signup error:', error);
+        res.status(500).json({ message: 'Registration failed' });
     }
 };
 
@@ -70,28 +58,37 @@ exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Check if the user exists
-        const user = await User.findOne({ email });
+        // Find user
+        const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
-            return res.status(400).json({ message: 'Invalid email or password' });
+            return res.status(401).json({ message: 'Invalid credentials' });
         }
 
-        // Compare passwords
+        // Verify password
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
-            return res.status(400).json({ message: 'Invalid email or password' });
+            return res.status(401).json({ message: 'Invalid credentials' });
         }
 
-        // Generate JWT token
+        // Generate token
         const token = jwt.sign(
-            { userId: user._id, email: user.email },
+            { userId: user._id },
             process.env.JWT_SECRET,
-            { expiresIn: '1h' } // token expires in 1 hour
+            { expiresIn: '24h' }
         );
 
-        res.status(200).json({ message: 'Login successful', token });
+        res.status(200).json({
+            message: 'Login successful',
+            token,
+            user: {
+                id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email
+            }
+        });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        console.error('Login error:', error);
+        res.status(500).json({ message: 'Login failed' });
     }
 };
