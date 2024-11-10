@@ -7,32 +7,32 @@ const SALT_ROUNDS = 10;
 
 exports.signup = async (req, res) => {
     try {
-        const { firstName, lastName, email, password, phone, birthDate, address } = req.body;
+        const { firstName, lastName, email, password, phone, address } = req.body;
+        console.log('Received data:', req.body); // For debugging
 
-        
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
             return res.status(409).json({ message: 'Email already registered' });
         }
 
-        
-        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+        // Create username from email
+        const username = email.split('@')[0];
 
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
         
+        // Structure the data to match your model
         const newUser = new User({
             firstName: firstName.trim(),
             lastName: lastName.trim(),
             email: email.toLowerCase(),
             password: hashedPassword,
-            phone,
-            birthDate,
-            address,
-            createdAt: new Date()
+            phoneNumber: phone, // Changed from phone to phoneNumber to match model
+            username: username,
+            address: address.trim()
         });
 
         await newUser.save();
 
-        
         const token = jwt.sign(
             { userId: newUser._id },
             process.env.JWT_SECRET,
@@ -46,8 +46,7 @@ exports.signup = async (req, res) => {
                 id: newUser._id,
                 firstName: newUser.firstName,
                 lastName: newUser.lastName,
-                email: newUser.email,
-                address: newUser.address
+                email: newUser.email
             }
         });
     } catch (error) {

@@ -9,14 +9,7 @@ const userSchema = new mongoose.Schema({
     username: { type: String, unique: true },
     password: { type: String, required: true },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
-    address: {
-        street: String,
-        city: String,
-        state: String,
-        zipCode: String
-    },
-    canListItems: { type: Boolean, default: true },
-    canRentItems: { type: Boolean, default: true }
+    address: { type: String, required: true }, 
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
