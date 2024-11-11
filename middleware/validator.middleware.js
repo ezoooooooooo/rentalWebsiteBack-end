@@ -4,7 +4,7 @@ exports.validateSignup = (req, res, next) => {
     const { firstName, lastName, email, password, phone, address } = req.body;
     const errors = {};
 
-    // Basic validations matching your frontend
+    
     if (!firstName?.trim()) {
         errors.firstName = "First name is required";
     }
@@ -17,12 +17,12 @@ exports.validateSignup = (req, res, next) => {
         errors.email = "Valid email is required";
     }
     
-    // Simpler password validation to match frontend
+    
     if (!password || password.length < 8 || !/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
         errors.password = "Password must be at least 8 characters and contain both letters and numbers";
     }
     
-    // Simple phone validation for 11 digits
+    
     if (!phone || !phone.match(/^\d{11}$/)) {
         errors.phone = "Phone number must be 11 digits";
     }

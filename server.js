@@ -15,7 +15,7 @@ app.use(express.json());
 connectDB();
 
 app.use(cors({
-    origin: 'http://127.0.0.1:5500',  // This is the default Live Server port
+    origin: 'http://127.0.0.1:5500',  
     credentials: true
   }));
   
