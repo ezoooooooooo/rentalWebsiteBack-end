@@ -2,10 +2,14 @@ require('dotenv').config();
 const express = require("express");
 const connectDB = require("./db");
 const authRoutes = require('./routes/authRoutes');
+const listingRoutes = require('./routes/listings'); 
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path');
+
 
 const app = express();
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const PORT = process.env.PORT || 3000;
 
 
@@ -20,6 +24,7 @@ app.use(cors({
   }));
   
 app.use('/api', authRoutes);
+app.use('/api/listings', listingRoutes);
 
 app.use((err, req, res, next) => {
     console.error(err.stack);

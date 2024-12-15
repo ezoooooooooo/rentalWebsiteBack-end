@@ -8,7 +8,7 @@ const SALT_ROUNDS = 10;
 exports.signup = async (req, res) => {
     try {
         const { firstName, lastName, email, password, phone, address } = req.body;
-        console.log('Received data:', req.body);
+        // console.log('Received data:', req.body);
 
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
