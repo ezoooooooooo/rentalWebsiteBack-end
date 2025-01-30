@@ -3,12 +3,35 @@ const Listing = require('../Models/Listing');
 // Get all listings
 exports.getAllListings = async (req, res) => {
     try {
-        const listings = await Listing.find().populate('owner', 'name email');
+        const { search } = req.query;  // Get search query if provided
+
+        // Validate search query
+        if (search && typeof search !== 'string') {
+            return res.status(400).json({ error: "Invalid search query" });
+        }
+
+        let filter = {};
+
+        // If there's a search term, apply filtering to the query
+        if (search) {
+            filter = {
+                $or: [
+                    { name: { $regex: search, $options: 'i' } },  // Match name
+                    { description: { $regex: search, $options: 'i' } },  // Match description
+                    { category: { $regex: search, $options: 'i' } }  // Match category
+                ]
+            };
+        }
+
+        // Fetch listings with or without filter based on search
+        const listings = await Listing.find(filter).populate('owner', 'firstName lastName email');
         res.json(listings);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
+
+
 
 // Create a new listing
 exports.createListing = async (req, res) => {
