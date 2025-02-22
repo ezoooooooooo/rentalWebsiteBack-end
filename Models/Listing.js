@@ -5,7 +5,10 @@ const listingSchema = new mongoose.Schema({
     description: { type: String, required: true },
     category: { type: String, required: true },
     rentalRate: { type: Number, required: true },
-    images: [{ type: String }],
+    images: [{
+        url: String,
+        public_id: String
+      }],
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 }, { timestamps: true });
 

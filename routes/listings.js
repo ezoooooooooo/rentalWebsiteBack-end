@@ -1,7 +1,7 @@
 const express = require('express');
 const { getAllListings, createListing, deleteListing, getUserListings,editListing,getListingById } = require('../Controllers/ListingController');
 const { verifyToken } = require('../middleware/auth.middleware');
-const upload = require('../middleware/upload');
+const { upload } = require('../config/cloudinary');
 
 const router = express.Router();
 

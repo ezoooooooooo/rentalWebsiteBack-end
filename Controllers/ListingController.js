@@ -37,7 +37,10 @@ exports.getAllListings = async (req, res) => {
 exports.createListing = async (req, res) => {
  try {
      const { name, description, category, rentalRate } = req.body;
-     const images = req.files.map(file => file.path);
+     const images = req.files.map(file => ({
+        url: file.path,
+        public_id: file.filename
+      }));
      const owner = req.user.userId; 
 
      if (!name || !description || !category || !rentalRate) {
@@ -101,9 +104,19 @@ exports.editListing = async (req, res) => {
 
         // Handle image uploads (if new images are provided)
         if (req.files && req.files.length > 0) {
-            const imagePaths = req.files.map(file => `/uploads/${file.filename}`);
-            listing.images = imagePaths; // Replace existing images with new ones
-        }
+            // Delete old images from Cloudinary
+            for (const image of listing.images) {
+              if (image.public_id) {
+                await cloudinary.uploader.destroy(image.public_id);
+              }
+            }
+      
+            // Add new images
+            listing.images = req.files.map(file => ({
+              url: file.path,
+              public_id: file.filename
+            }));
+          }
 
         console.log('✅ Updated listing:', listing);
 
@@ -135,6 +148,11 @@ exports.deleteListing = async (req, res) => {
         if (listing.owner.toString() !== userId) {
             return res.status(403).json({ error: 'Unauthorized' });
         }
+        for (const image of listing.images) {
+            if (image.public_id) {
+              await cloudinary.uploader.destroy(image.public_id);
+            }
+          }
 
         await Listing.findByIdAndDelete(req.params.id);
         res.json({ message: 'Listing deleted successfully' });
