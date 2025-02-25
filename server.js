@@ -3,6 +3,7 @@ const express = require("express");
 const connectDB = require("./db");
 const authRoutes = require('./routes/authRoutes');
 const listingRoutes = require('./routes/listings'); 
+const cartRoutes = require('./routes/cartRoutes');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
@@ -25,6 +26,7 @@ app.use(cors({
   
 app.use('/api', authRoutes);
 app.use('/api/listings', listingRoutes);
+app.use('/api', cartRoutes);
 
 app.use((err, req, res, next) => {
     console.error(err.stack);
