@@ -1,5 +1,5 @@
 const Listing = require('../Models/Listing');
-const upload = require('../middleware/upload');
+const cloudinary = require('../config/cloudinary');
 // Get all listings
 exports.getAllListings = async (req, res) => {
     try {
@@ -37,10 +37,12 @@ exports.getAllListings = async (req, res) => {
 exports.createListing = async (req, res) => {
  try {
      const { name, description, category, rentalRate } = req.body;
-     const images = req.files.map(file => ({
-        url: file.path,
-        public_id: file.filename
-      }));
+     const images = req.files && req.files.length > 0 
+     ? req.files.map(file => ({
+         url: file.path,
+         public_id: file.filename
+       }))
+     : [];
      const owner = req.user.userId; 
 
      if (!name || !description || !category || !rentalRate) {
@@ -64,14 +66,18 @@ exports.createListing = async (req, res) => {
  }
 };
 exports.editListing = async (req, res) => {
+    console.log("📩 Received removedImages from frontend:", req.body.removedImages);
+    
     const { id } = req.params; // Listing ID
-    const { name, description, category, rentalRate } = req.body;
+    const { name, description, category, rentalRate, removedImages } = req.body;
     const userId = req.user ? req.user.userId : null; // Check if req.user exists
 
-    console.log('🟢 Received update request for listing:', id);
-    console.log('📄 Request body:', req.body);
-    console.log('📸 Uploaded files:', req.files);
-    console.log('🔍 Authenticated User ID:', userId);
+    console.log('🟢 Detailed Listing Update Request');
+    console.log('🆔 Listing ID:', id);
+    console.log('📄 Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('📸 Uploaded Files:', req.files);
+    console.log('👤 User ID:', userId);
+    console.log('🗑️ Removed Images (Raw):', removedImages);
 
     try {
         // Find the listing by ID
@@ -96,27 +102,71 @@ exports.editListing = async (req, res) => {
             return res.status(403).json({ message: 'You are not authorized to edit this listing' });
         }
 
-        // Update the listing fields
+        let removeImages = [];
+        if (removedImages) {
+            try {
+                // Try parsing, handle string and array
+                removeImages = typeof removedImages === 'string' 
+                    ? JSON.parse(removedImages) 
+                    : removedImages;
+                
+                console.log('🔍 Processed Remove Images:', removeImages);
+            } catch (error) {
+                console.error('❌ Invalid removedImages format:', error);
+                return res.status(400).json({ message: 'Invalid removedImages format' });
+            }
+        }
+
+        // **Update listing fields**
         listing.name = name || listing.name;
         listing.description = description || listing.description;
         listing.category = category || listing.category;
         listing.rentalRate = rentalRate || listing.rentalRate;
 
-        // Handle image uploads (if new images are provided)
+        // **Removing images**
+        if (removeImages.length > 0) {
+            const initialImageCount = listing.images.length;
+
+            console.log('🔍 Current Images Before Deletion:', listing.images.map(img => img.public_id));
+
+            listing.images = listing.images.filter(image => {
+                const shouldRemove = removeImages.some(
+                    removeId => 
+                        removeId === image.public_id || 
+                        removeId === image.url.split('/').pop()
+                );
+
+                if (shouldRemove) {
+                    console.log('🗑️ Removing image:', image.public_id);
+                
+                    if (cloudinary.uploader && cloudinary.uploader.destroy) {
+                        cloudinary.uploader.destroy(image.public_id)
+                            .then(result => console.log("✅ Cloudinary deletion:", result))
+                            .catch(err => console.error("❌ Cloudinary deletion error:", err));
+                    } else {
+                        console.error("❌ Cloudinary uploader is undefined");
+                    }
+                }
+                
+
+                return !shouldRemove; // Keep only images that are NOT in `removedImages`
+            });
+
+            console.log(`🖼️ Images updated: ${initialImageCount} → ${listing.images.length}`);
+            console.log('🔍 Current Images After Deletion:', listing.images.map(img => img.public_id));
+        }
+
+        // **Adding new images (if uploaded)**
         if (req.files && req.files.length > 0) {
-            // Delete old images from Cloudinary
-            for (const image of listing.images) {
-              if (image.public_id) {
-                await cloudinary.uploader.destroy(image.public_id);
-              }
-            }
-      
-            // Add new images
-            listing.images = req.files.map(file => ({
-              url: file.path,
-              public_id: file.filename
+            const newImages = req.files.map(file => ({
+                url: file.path,
+                public_id: file.filename
             }));
-          }
+
+            console.log('📸 Adding New Images:', newImages);
+
+            listing.images.push(...newImages); // ✅ Append new images instead of replacing
+        }
 
         console.log('✅ Updated listing:', listing);
 
@@ -125,13 +175,14 @@ exports.editListing = async (req, res) => {
 
         return res.json({ message: 'Listing updated successfully', listing });
     } catch (error) {
-        console.error('❌ Error updating listing:', error.message);
-
-        if (!res.headersSent) {
-            return res.status(500).json({ message: 'Error updating listing', error: error.message });
-        }
+        console.error('❌ Comprehensive Edit Error:', error);
+        return res.status(500).json({ 
+            message: 'Listing update failed', 
+            error: error.message 
+        });
     }
 };
+
 
 
 
@@ -169,7 +220,7 @@ exports.getUserListings = async (req, res) => {
         const userListings = await Listing.find({ owner: userId });
 
         if (!userListings.length) {
-            return res.status(404).json({ message: 'No listings found for this user' });
+            return res.status(200).json([]);
         }
 
         res.status(200).json(userListings);

@@ -6,9 +6,9 @@ const { upload } = require('../config/cloudinary');
 const router = express.Router();
 
 router.get('/', getAllListings);
-router.post('/', verifyToken,upload.array('images', 5), createListing);
+router.post('/', verifyToken,upload.array('images'), createListing);
 router.get('/user', verifyToken, getUserListings);
-router.put('/:id', verifyToken, upload.array('images', 5), editListing);
+router.put('/:id', verifyToken, upload.array('images'), editListing);
 
 router.delete('/:id', verifyToken, deleteListing);
 router.get('/:id', getListingById);
