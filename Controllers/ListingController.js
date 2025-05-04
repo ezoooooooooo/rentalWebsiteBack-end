@@ -1,9 +1,11 @@
 const Listing = require('../Models/Listing');
+const Order = require('../Models/Order');
 const cloudinary = require('../config/cloudinary');
+
 // Get all listings
 exports.getAllListings = async (req, res) => {
     try {
-        const { search } = req.query;  // Get search query if provided
+        const { search, category } = req.query;  // Get search query and category if provided
 
         // Validate search query
         if (search && typeof search !== 'string') {
@@ -23,9 +25,38 @@ exports.getAllListings = async (req, res) => {
             };
         }
 
+        // If category is provided, add it to the filter
+        if (category) {
+            filter.category = category;
+        }
+
         // Fetch listings with or without filter based on search
         const listings = await Listing.find(filter).populate('owner', 'firstName lastName email');
-        res.json(listings);
+        
+        // Check current date for availability
+        const currentDate = new Date();
+        
+        // Add availability information to each listing
+        const listingsWithAvailability = listings.map(listing => {
+            const listingObj = listing.toObject();
+            
+            // If the listing is already marked as reserved or rented, keep that status
+            if (listing.status === 'reserved' || listing.status === 'rented') {
+                listingObj.isAvailable = false;
+                
+                // Add reservation end date if available
+                if (listing.reservedUntil) {
+                    listingObj.availableAfter = listing.reservedUntil;
+                }
+            } else {
+                // Otherwise, it's available
+                listingObj.isAvailable = true;
+            }
+            
+            return listingObj;
+        });
+        
+        res.json(listingsWithAvailability);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -223,12 +254,41 @@ exports.getUserListings = async (req, res) => {
             return res.status(200).json([]);
         }
 
-        res.status(200).json(userListings);
+        // Get active orders for these listings
+        const listingIds = userListings.map(listing => listing._id);
+        const activeOrders = await Order.find({
+            listing: { $in: listingIds },
+            isActive: true
+        }).select('listing startDate endDate status');
+
+        // Create a map of listing IDs to their active orders
+        const listingOrdersMap = {};
+        activeOrders.forEach(order => {
+            if (!listingOrdersMap[order.listing.toString()]) {
+                listingOrdersMap[order.listing.toString()] = [];
+            }
+            listingOrdersMap[order.listing.toString()].push({
+                orderId: order._id,
+                startDate: order.startDate,
+                endDate: order.endDate,
+                status: order.status
+            });
+        });
+
+        // Add order information to each listing
+        const listingsWithOrders = userListings.map(listing => {
+            const listingObj = listing.toObject();
+            listingObj.activeOrders = listingOrdersMap[listing._id.toString()] || [];
+            return listingObj;
+        });
+
+        res.status(200).json(listingsWithOrders);
     } catch (error) {
         console.error('Error fetching user listings:', error);
         res.status(500).json({ message: 'Failed to fetch user listings' });
     }
 };
+
 // Get a specific listing by ID
 exports.getListingById = async (req, res) => {
     try {
@@ -241,7 +301,36 @@ exports.getListingById = async (req, res) => {
             return res.status(404).json({ message: 'Listing not found' });
         }
 
-        res.status(200).json(listing);
+        // Check if there are any active orders for this listing
+        const activeOrders = await Order.find({
+            listing: id,
+            isActive: true
+        }).select('startDate endDate status');
+
+        // Convert to a plain object so we can add properties
+        const listingObj = listing.toObject();
+        
+        // Add availability information
+        if (listing.status === 'reserved' || listing.status === 'rented') {
+            listingObj.isAvailable = false;
+            
+            // Add reservation end date if available
+            if (listing.reservedUntil) {
+                listingObj.availableAfter = listing.reservedUntil;
+            }
+            
+            // Add active orders information
+            listingObj.activeOrders = activeOrders.map(order => ({
+                startDate: order.startDate,
+                endDate: order.endDate,
+                status: order.status
+            }));
+        } else {
+            listingObj.isAvailable = true;
+            listingObj.activeOrders = [];
+        }
+
+        res.status(200).json(listingObj);
     } catch (error) {
         console.error('Error fetching listing:', error);
         res.status(500).json({ message: 'Error fetching listing', error: error.message });

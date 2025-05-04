@@ -1,15 +1,18 @@
-
 const express = require('express');
 const router = express.Router();
 const userController = require('../Controllers/userController');
 const { validateSignup, validateLogin } = require('../middleware/validator.middleware');
 const { loginLimiter } = require('../middleware/rateLimiter.middleware');
 const { verifyToken } = require('../middleware/auth.middleware');
- const User = require('../Models/userModel'); // Adjust path based on your project structure
+const User = require('../Models/userModel'); // Adjust path based on your project structure
 
 
 router.post('/signup', validateSignup, userController.signup);
 router.post('/login', loginLimiter, validateLogin, userController.login);
+
+// Password reset routes
+router.post('/forgot-password', userController.forgotPassword);
+router.post('/reset-password', userController.resetPassword);
 
 
 router.get('/profile', verifyToken, async (req, res) => {
@@ -27,7 +30,9 @@ router.get('/profile', verifyToken, async (req, res) => {
             firstName: user.firstName,
             lastName: user.lastName,
             email: user.email,
-            role: user.role
+            role: user.role,
+            address: user.address,
+            phoneNumber: user.phoneNumber
             // You can add or remove fields based on what your frontend needs
         });
     } catch (error) {
