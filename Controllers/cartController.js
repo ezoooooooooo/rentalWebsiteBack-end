@@ -26,6 +26,14 @@ const addToCart = async (req, res) => {
         .json({ success: false, message: "Listing not found" });
     }
 
+    // Check if the item is already reserved or rented
+    if (listing.status === "reserved" || listing.status === "rented") {
+      return res.status(400).json({
+        success: false,
+        message: `This item is currently ${listing.status}. It's not available for rent at the moment.`,
+      });
+    }
+
     // Prevent user from adding their own items
     if (listing.owner.toString() === userId) {
       return res.status(403).json({
