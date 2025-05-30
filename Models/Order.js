@@ -32,6 +32,12 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  insuranceFee: {
+    type: Number,
+    default: function() {
+      return this.totalPrice * 0.1; // 10% of total price
+    },
+  },
   status: {
     type: String,
     enum: ["pending", "approved", "rejected", "completed", "cancelled"],

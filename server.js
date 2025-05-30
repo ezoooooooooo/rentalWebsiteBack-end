@@ -9,6 +9,7 @@ const ratingRoutes = require("./routes/ratingRoutes");
 const ownerRatingRoutes = require("./routes/ownerRatingRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const path = require("path");
@@ -23,7 +24,7 @@ connectDB();
 
 app.use(
   cors({
-    origin: "http://127.0.0.1:5500",
+    origin: ["http://127.0.0.1:5500", "http://127.0.0.1:5501"],
     credentials: true,
   })
 );
@@ -36,6 +37,7 @@ app.use("/api/ratings", ratingRoutes);
 app.use("/api/owner-ratings", ownerRatingRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.use((err, req, res, next) => {
   console.error("ERROR DETAILS:");
