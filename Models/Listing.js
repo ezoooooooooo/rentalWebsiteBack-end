@@ -25,6 +25,10 @@ const listingSchema = new mongoose.Schema(
     reservedUntil: {
       type: Date,
       default: null
+    },
+    featured: {
+      type: Boolean,
+      default: false
     }
   },
   { timestamps: true }

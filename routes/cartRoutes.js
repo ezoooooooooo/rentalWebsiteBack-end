@@ -10,7 +10,6 @@ const {
   clearCart, 
   updateCartItem 
 } = require('../Controllers/cartController');
-console.log({ addToCart, getCart, removeFromCart, clearCart, updateCartItem });
 
 // Get cart
 router.get('/cart', verifyToken, getCart);

@@ -7,7 +7,11 @@ const { verifyToken } = require('../middleware/auth.middleware');
 const User = require('../Models/userModel'); // Adjust path based on your project structure
 
 
-router.post('/signup', validateSignup, userController.signup);
+// New signup process with verification code
+router.post('/request-verification', validateSignup, userController.requestVerificationCode);
+router.post('/verify-signup', userController.verifyCodeAndSignup);
+router.post('/resend-code', userController.resendVerificationCode);
+
 router.post('/login', loginLimiter, validateLogin, userController.login);
 
 // Password reset routes

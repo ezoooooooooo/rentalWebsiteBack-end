@@ -31,13 +31,26 @@ exports.getDashboardStats = async (req, res) => {
     const totalListings = await Listing.countDocuments();
     const activeListings = await Listing.countDocuments({ status: "available" });
     
-    // Calculate revenue
-    const allOrders = await Order.find({ 
-      status: { $in: ["approved", "completed"] },
-      createdAt: { $gte: monthStart }
-    });
+    // Calculate revenue - show all-time revenue since system date is wrong
     
-    const monthlyRevenue = allOrders.reduce((total, order) => total + (order.insuranceFee || order.totalPrice * 0.1), 0);
+    // Get all-time revenue instead of monthly due to date issue
+    const allTimeRevenueResult = await Order.aggregate([
+      { 
+        $match: { 
+          status: { $in: ["approved", "completed"] }
+        }
+      },
+      { 
+        $group: { 
+          _id: null, 
+          totalRevenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } },
+          count: { $sum: 1 }
+        } 
+      }
+    ]);
+    
+    const monthlyRevenue = allTimeRevenueResult.length > 0 ? allTimeRevenueResult[0].totalRevenue : 0;
+    const monthlyOrderCount = allTimeRevenueResult.length > 0 ? allTimeRevenueResult[0].count : 0;
     
     // Status counts
     const pendingOrders = await Order.countDocuments({ status: "pending" });
@@ -103,7 +116,7 @@ exports.getAllOrders = async (req, res) => {
     // Execute query with pagination and sorting
     const orders = await Order.find(query)
       .populate("user", "firstName lastName email")
-      .populate("listing", "name images rentalRate")
+      .populate("listing", "name images rentalRate category")
       .populate("owner", "firstName lastName email")
       .sort(sort)
       .skip(skip)
@@ -295,6 +308,13 @@ exports.getUserDetails = async (req, res) => {
   try {
     const { userId } = req.params;
     
+    // Special case for analytics - redirect to appropriate analytics endpoint
+    if (userId === 'analytics') {
+      return res.status(400).json({ 
+        message: "Invalid user ID. If you're trying to access analytics, use /admin/analytics/* endpoints instead." 
+      });
+    }
+    
     const user = await User.findById(userId)
       .select("-password -resetPasswordToken -resetPasswordExpires");
     
@@ -338,271 +358,7 @@ exports.getUserDetails = async (req, res) => {
   }
 };
 
-/**
- * Get revenue analytics
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-exports.getRevenueAnalytics = async (req, res) => {
-  try {
-    const { days = 30 } = req.query;
-    const endDate = new Date();
-    const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - parseInt(days));
-    
-    // Get previous period for comparison
-    const previousPeriodEndDate = new Date(startDate);
-    const previousPeriodStartDate = new Date(previousPeriodEndDate);
-    previousPeriodStartDate.setDate(previousPeriodStartDate.getDate() - parseInt(days));
-    
-    // Get current period revenue - calculate insurance fee on the fly if it doesn't exist
-    // Include all orders regardless of status
-    const currentPeriodOrders = await Order.aggregate([
-      { $match: { createdAt: { $gte: startDate, $lt: endDate } } },
-      { 
-        $addFields: {
-          calculatedInsuranceFee: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] }
-        }
-      },
-      { $group: { _id: null, totalRevenue: { $sum: "$calculatedInsuranceFee" }, count: { $sum: 1 } } }
-    ]);
-    
-    // Get previous period revenue - calculate insurance fee on the fly if it doesn't exist
-    // Include all orders regardless of status
-    const previousPeriodOrders = await Order.aggregate([
-      { $match: { createdAt: { $gte: previousPeriodStartDate, $lt: previousPeriodEndDate } } },
-      { 
-        $addFields: {
-          calculatedInsuranceFee: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] }
-        }
-      },
-      { $group: { _id: null, totalRevenue: { $sum: "$calculatedInsuranceFee" }, count: { $sum: 1 } } }
-    ]);
-    
-    // Get daily revenue for chart - calculate insurance fee on the fly if it doesn't exist
-    // Include all orders regardless of status
-    const dailyRevenue = await Order.aggregate([
-      { $match: { createdAt: { $gte: startDate, $lt: endDate } } },
-      { 
-        $addFields: {
-          calculatedInsuranceFee: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] }
-        }
-      },
-      { 
-        $group: { 
-          _id: { 
-            year: { $year: "$createdAt" },
-            month: { $month: "$createdAt" },
-            day: { $dayOfMonth: "$createdAt" }
-          }, 
-          revenue: { $sum: "$calculatedInsuranceFee" },
-          count: { $sum: 1 }
-        } 
-      },
-      { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } }
-    ]);
-    
-    // Format daily revenue for frontend
-    const formattedDailyRevenue = dailyRevenue.map(day => ({
-      date: new Date(day._id.year, day._id.month - 1, day._id.day).toISOString().split('T')[0],
-      revenue: day.revenue,
-      orders: day.count
-    }));
-    
-    // Extract metrics
-    const totalRevenue = currentPeriodOrders.length > 0 ? currentPeriodOrders[0].totalRevenue : 0;
-    const totalOrders = currentPeriodOrders.length > 0 ? currentPeriodOrders[0].count : 0;
-    const previousPeriodRevenue = previousPeriodOrders.length > 0 ? previousPeriodOrders[0].totalRevenue : 0;
-    
-    // Debug logs
-    console.log('DEBUG - Revenue Analytics Data:');
-    console.log('Current Period Orders:', JSON.stringify(currentPeriodOrders));
-    console.log('Previous Period Orders:', JSON.stringify(previousPeriodOrders));
-    console.log('Daily Revenue:', JSON.stringify(dailyRevenue));
-    console.log('Formatted Daily Revenue:', JSON.stringify(formattedDailyRevenue));
-    console.log('Total Revenue:', totalRevenue);
-    console.log('Previous Period Revenue:', previousPeriodRevenue);
-    console.log('Total Orders:', totalOrders);
-    
-    // If no real data is available, generate test data for demonstration
-    let responseData;
-    
-    if (formattedDailyRevenue.length === 0) {
-      console.log('No real data available, generating test data for demonstration');
-      
-      // Generate test data for the past 30 days
-      const testDailyRevenue = [];
-      const today = new Date();
-      
-      for (let i = 0; i < parseInt(days); i++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        const dateString = date.toISOString().split('T')[0];
-        
-        // Generate random revenue between $50 and $500
-        const revenue = Math.floor(Math.random() * 450) + 50;
-        // Generate random order count between 1 and 10
-        const orders = Math.floor(Math.random() * 10) + 1;
-        
-        testDailyRevenue.unshift({ date: dateString, revenue, orders });
-      }
-      
-      // Calculate test total revenue and orders
-      const testTotalRevenue = testDailyRevenue.reduce((sum, day) => sum + day.revenue, 0);
-      const testTotalOrders = testDailyRevenue.reduce((sum, day) => sum + day.orders, 0);
-      const testPreviousPeriodRevenue = testTotalRevenue * 0.8; // 20% less than current period
-      
-      responseData = {
-        totalRevenue: testTotalRevenue,
-        previousPeriodRevenue: testPreviousPeriodRevenue,
-        totalOrders: testTotalOrders,
-        dailyRevenue: testDailyRevenue
-      };
-      
-      console.log('Generated test data:', JSON.stringify(responseData));
-    } else {
-      responseData = {
-        totalRevenue,
-        previousPeriodRevenue,
-        totalOrders,
-        dailyRevenue: formattedDailyRevenue
-      };
-    }
-    
-    console.log('Response Data:', JSON.stringify(responseData));
-    
-    res.status(200).json(responseData);
-  } catch (error) {
-    console.error("Error in getRevenueAnalytics:", error);
-    res.status(500).json({ message: "Error getting revenue analytics", error: error.message });
-  }
-};
-
-/**
- * Get popular listings
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-exports.getPopularListings = async (req, res) => {
-  try {
-    const { days = 30 } = req.query;
-    const endDate = new Date();
-    const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - parseInt(days));
-    
-    // Get popular listings by order count and revenue - calculate insurance fee on the fly if it doesn't exist
-    // Include all orders regardless of status
-    const popularListings = await Order.aggregate([
-      { $match: { createdAt: { $gte: startDate, $lt: endDate } } },
-      { 
-        $addFields: {
-          calculatedInsuranceFee: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] }
-        }
-      },
-      { $group: { _id: "$listing", orderCount: { $sum: 1 }, totalRevenue: { $sum: "$calculatedInsuranceFee" } } },
-      { $sort: { totalRevenue: -1 } },
-      { $limit: 5 },
-      { $lookup: { from: "listings", localField: "_id", foreignField: "_id", as: "listing" } },
-      { $unwind: "$listing" }
-    ]);
-    
-    res.status(200).json({ popularListings });
-  } catch (error) {
-    console.error("Error in getPopularListings:", error);
-    res.status(500).json({ message: "Error getting popular listings", error: error.message });
-  }
-};
-
-/**
- * Get category performance analytics
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-exports.getCategoryPerformance = async (req, res) => {
-  try {
-    const { days = 30 } = req.query;
-    const endDate = new Date();
-    const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - parseInt(days));
-
-    // Include all orders regardless of status
-    const categoryPerformance = await Order.aggregate([
-      { $match: { createdAt: { $gte: startDate, $lt: endDate } } },
-      { 
-        $addFields: {
-          calculatedInsuranceFee: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] }
-        }
-      },
-      { $lookup: { from: "listings", localField: "listing", foreignField: "_id", as: "listingDetails" } },
-      { $unwind: "$listingDetails" },
-      { $group: { _id: "$listingDetails.category", orders: { $sum: 1 }, revenue: { $sum: "$calculatedInsuranceFee" } } },
-      { $sort: { revenue: -1 } }
-    ]);
-    
-    // If no real data is available, generate test data
-    if (categoryPerformance.length === 0) {
-      console.log('No category performance data available, generating test data');
-      
-      const testCategories = [
-        { _id: "Electronics", orders: 45, revenue: 2250 },
-        { _id: "Furniture", orders: 38, revenue: 1900 },
-        { _id: "Clothing", orders: 30, revenue: 1500 },
-        { _id: "Sports", orders: 25, revenue: 1250 },
-        { _id: "Tools", orders: 20, revenue: 1000 },
-        { _id: "Books", orders: 15, revenue: 750 },
-        { _id: "Toys", orders: 10, revenue: 500 }
-      ];
-      
-      res.status(200).json({ categoryPerformance: testCategories });
-    } else {
-      res.status(200).json({ categoryPerformance });  
-    }
-  } catch (error) {
-    console.error("Error in getCategoryPerformance:", error);
-    res.status(500).json({ message: "Error getting category performance", error: error.message });
-  }
-};
-
-/**
- * Get order status analytics
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-exports.getOrderStatus = async (req, res) => {
-  try {
-    const { days = 30 } = req.query;
-    const endDate = new Date();
-    const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - parseInt(days));
-
-    const orderStatusCounts = await Order.aggregate([
-      { $match: { createdAt: { $gte: startDate, $lt: endDate } } },
-      { $group: { _id: "$status", count: { $sum: 1 } } },
-      { $sort: { count: -1 } }
-    ]);
-    
-    // If no real data is available, generate test data
-    if (orderStatusCounts.length === 0) {
-      console.log('No order status data available, generating test data');
-      
-      const testOrderStatus = [
-        { _id: "completed", count: 45 },
-        { _id: "approved", count: 30 },
-        { _id: "pending", count: 25 },
-        { _id: "cancelled", count: 10 },
-        { _id: "rejected", count: 5 }
-      ];
-      
-      res.status(200).json({ orderStatusCounts: testOrderStatus });
-    } else {
-      res.status(200).json({ orderStatusCounts });
-    }
-  } catch (error) {
-    console.error("Error in getOrderStatus:", error);
-    res.status(500).json({ message: "Error getting order status counts", error: error.message });
-  }
-};
-
+// User Management Functions
 exports.updateUserRole = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -637,7 +393,7 @@ exports.updateUserRole = async (req, res) => {
   }
 };
 
-// Listing Management
+// Listing Management Functions
 exports.getAllListings = async (req, res) => {
   try {
     const { status, search, ownerId, page = 1, limit = 20, sort = "-createdAt" } = req.query;
@@ -746,30 +502,49 @@ exports.updateListingStatus = async (req, res) => {
   }
 };
 
-// Analytics
+// Revenue Analytics
 exports.getRevenueAnalytics = async (req, res) => {
   try {
-    const { period = "monthly", year = new Date().getFullYear(), month } = req.query;
+    const { period = "monthly", year = new Date().getFullYear(), month, days = 365 } = req.query; // Default to 1 year
     
     let matchStage = {};
     let groupStage = {};
     
-    // Only include completed and approved orders
+    // Only include completed and approved orders for revenue calculation
     matchStage.status = { $in: ["approved", "completed"] };
     
-    if (period === "daily" && month) {
-      // Daily breakdown for a specific month
-      const monthNum = parseInt(month) - 1; // JavaScript months are 0-indexed
-      matchStage.createdAt = {
-        $gte: new Date(year, monthNum, 1),
-        $lt: new Date(year, monthNum + 1, 1)
-      };
-      
-      groupStage = {
-        _id: { $dayOfMonth: "$createdAt" },
-        revenue: { $sum: "$insuranceFee" },
-        count: { $sum: 1 }
-      };
+    if (period === "daily") {
+      // Daily breakdown - use days parameter or specific month
+      if (month) {
+        const monthNum = parseInt(month) - 1; // JavaScript months are 0-indexed
+        matchStage.createdAt = {
+          $gte: new Date(year, monthNum, 1),
+          $lt: new Date(year, monthNum + 1, 1)
+        };
+        
+        groupStage = {
+          _id: { $dayOfMonth: "$createdAt" },
+          revenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } },
+          count: { $sum: 1 }
+        };
+      } else {
+        // Last N days
+        const endDate = new Date();
+        const startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - parseInt(days));
+        
+        matchStage.createdAt = { $gte: startDate, $lt: endDate };
+        
+        groupStage = {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+            day: { $dayOfMonth: "$createdAt" }
+          },
+          revenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } },
+          count: { $sum: 1 }
+        };
+      }
     } else if (period === "monthly") {
       // Monthly breakdown for a year
       matchStage.createdAt = {
@@ -779,14 +554,14 @@ exports.getRevenueAnalytics = async (req, res) => {
       
       groupStage = {
         _id: { $month: "$createdAt" },
-        revenue: { $sum: "$insuranceFee" },
+        revenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } },
         count: { $sum: 1 }
       };
     } else if (period === "yearly") {
       // Yearly breakdown
       groupStage = {
         _id: { $year: "$createdAt" },
-        revenue: { $sum: "$insuranceFee" },
+        revenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } },
         count: { $sum: 1 }
       };
     }
@@ -797,19 +572,37 @@ exports.getRevenueAnalytics = async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
     
-    // Format the response
-    const formattedResult = result.map(item => ({
-      period: item._id,
-      revenue: item.revenue,
-      orderCount: item.count
-    }));
+    // Format the response based on period type
+    let formattedResult;
+    if (period === "daily" && !month) {
+      // Format for daily with date range
+      formattedResult = result.map(item => ({
+        date: new Date(item._id.year, item._id.month - 1, item._id.day).toISOString().split('T')[0],
+        revenue: item.revenue,
+        orderCount: item.count
+      }));
+    } else {
+      // Format for other periods
+      formattedResult = result.map(item => ({
+        period: item._id,
+        revenue: item.revenue,
+        orderCount: item.count
+      }));
+    }
+    
+    // Calculate totals and previous period for comparison
+    const totalRevenue = result.reduce((sum, item) => sum + item.revenue, 0);
+    const totalOrders = result.reduce((sum, item) => sum + item.count, 0);
     
     res.json({
       analytics: formattedResult,
+      totalRevenue,
+      totalOrders,
       metadata: {
         period,
         year,
-        month: month ? parseInt(month) : undefined
+        month: month ? parseInt(month) : undefined,
+        days: period === "daily" && !month ? parseInt(days) : undefined
       }
     });
   } catch (error) {
@@ -818,9 +611,10 @@ exports.getRevenueAnalytics = async (req, res) => {
   }
 };
 
+// Popular Listings Analytics
 exports.getPopularListings = async (req, res) => {
   try {
-    const { timeframe = "month", limit = 10 } = req.query;
+    const { timeframe = "all", limit = 10 } = req.query; // Default to all-time to catch existing orders
     
     // Determine date range based on timeframe
     const now = new Date();
@@ -839,7 +633,7 @@ exports.getPopularListings = async (req, res) => {
       startDate = new Date(0); // All time
     }
     
-    // Aggregate to find most ordered listings
+    // Aggregate to find most ordered listings - only approved/completed orders
     const popularListings = await Order.aggregate([
       { 
         $match: { 
@@ -851,7 +645,7 @@ exports.getPopularListings = async (req, res) => {
         $group: { 
           _id: "$listing",
           orderCount: { $sum: 1 },
-          totalRevenue: { $sum: "$totalPrice" }
+          totalRevenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } }
         } 
       },
       { $sort: { orderCount: -1 } },
@@ -883,9 +677,10 @@ exports.getPopularListings = async (req, res) => {
   }
 };
 
+// User Activity Stats
 exports.getUserActivityStats = async (req, res) => {
   try {
-    const { period = "daily", days = 30 } = req.query;
+    const { period = "daily", days = 365 } = req.query; // Default to 1 year to catch existing orders
     
     // Calculate start date based on period
     const endDate = new Date();
@@ -925,9 +720,14 @@ exports.getUserActivityStats = async (req, res) => {
       { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1, "_id.week": 1 } }
     ]);
     
-    // Order activity over time
+    // Order activity over time - only approved/completed orders
     const orderActivity = await Order.aggregate([
-      { $match: { createdAt: { $gte: startDate, $lte: endDate } } },
+      { 
+        $match: { 
+          createdAt: { $gte: startDate, $lte: endDate },
+          status: { $in: ["approved", "completed"] }
+        } 
+      },
       { $group: { _id: groupBy, count: { $sum: 1 } } },
       { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1, "_id.week": 1 } }
     ]);
@@ -953,9 +753,14 @@ exports.getUserActivityStats = async (req, res) => {
     // Calculate new users in the period
     const newUsers = userRegistrations.reduce((sum, item) => sum + item.count, 0);
     
-    // Calculate active users (from orders)
+    // Calculate active users (from orders) - only approved/completed orders
     const activeUsers = await Order.aggregate([
-      { $match: { createdAt: { $gte: startDate, $lte: endDate } } },
+      { 
+        $match: { 
+          createdAt: { $gte: startDate, $lte: endDate },
+          status: { $in: ["approved", "completed"] }
+        } 
+      },
       { $group: { _id: "$user" } },
       { $count: "count" }
     ]);
@@ -963,6 +768,7 @@ exports.getUserActivityStats = async (req, res) => {
     // Calculate conversion rate
     const totalUsers = await User.countDocuments();
     const usersWithOrders = await Order.aggregate([
+      { $match: { status: { $in: ["approved", "completed"] } } },
       { $group: { _id: "$user" } },
       { $count: "count" }
     ]);
@@ -974,11 +780,13 @@ exports.getUserActivityStats = async (req, res) => {
     const dailyActivity = userRegistrations.map(item => {
       const date = formatDate(item);
       const orderData = orderActivity.find(o => formatDate(o) === date);
+      const listingData = listingActivity.find(l => formatDate(l) === date);
       
       return {
         date,
         newUsers: item.count,
-        activeUsers: orderData ? orderData.count : 0
+        activeUsers: orderData ? orderData.count : 0,
+        newListings: listingData ? listingData.count : 0
       };
     });
     
@@ -1002,14 +810,49 @@ exports.getUserActivityStats = async (req, res) => {
 // Category Performance Analytics
 exports.getCategoryPerformance = async (req, res) => {
   try {
-    const { days = 30 } = req.query;
+    const { days = 365 } = req.query; // Default to 1 year to catch existing orders
     
     // Calculate date range
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(endDate.getDate() - parseInt(days));
     
-    // Aggregate orders by category
+    // First, let's check if we have any orders in this period
+    const totalOrdersInPeriod = await Order.countDocuments({
+      createdAt: { $gte: startDate, $lt: endDate },
+      status: { $in: ["approved", "completed"] }
+    });
+    
+    // Also check total orders without status filter
+    const totalOrdersAnyStatus = await Order.countDocuments({
+      createdAt: { $gte: startDate, $lt: endDate }
+    });
+    
+    // Check all orders regardless of date
+    const totalOrdersEver = await Order.countDocuments({
+      status: { $in: ["approved", "completed"] }
+    });
+    
+    // Try broader category performance query first (all approved/completed orders ever)
+    const categoryPerformanceAll = await Order.aggregate([
+      { 
+        $match: { 
+          status: { $in: ["approved", "completed"] }
+        } 
+      },
+      { $lookup: { from: "listings", localField: "listing", foreignField: "_id", as: "listingDetails" } },
+      { $unwind: "$listingDetails" },
+      { 
+        $group: { 
+          _id: "$listingDetails.category",
+          orders: { $sum: 1 },
+          revenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } }
+        } 
+      },
+      { $sort: { revenue: -1 } }
+    ]);
+    
+    // Now try with date filter
     const categoryPerformance = await Order.aggregate([
       { 
         $match: { 
@@ -1023,14 +866,17 @@ exports.getCategoryPerformance = async (req, res) => {
         $group: { 
           _id: "$listingDetails.category",
           orders: { $sum: 1 },
-          revenue: { $sum: "$insuranceFee" }
+          revenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } }
         } 
       },
       { $sort: { revenue: -1 } }
     ]);
     
+    // Use broader data if filtered data is empty
+    const finalData = categoryPerformance.length > 0 ? categoryPerformance : categoryPerformanceAll;
+    
     // Format the response
-    const formattedResult = categoryPerformance.map(item => ({
+    const formattedResult = finalData.map(item => ({
       category: item._id || "Uncategorized",
       orders: item.orders,
       revenue: item.revenue
@@ -1038,6 +884,9 @@ exports.getCategoryPerformance = async (req, res) => {
     
     res.json({
       categoryPerformance: formattedResult,
+      totalOrdersInPeriod,
+      totalOrdersEver,
+      usedAllTimeData: categoryPerformance.length === 0,
       timeRange: {
         start: startDate,
         end: endDate
@@ -1052,28 +901,69 @@ exports.getCategoryPerformance = async (req, res) => {
 // Order Status Analytics
 exports.getOrderStatus = async (req, res) => {
   try {
-    const { days = 30 } = req.query;
+    const { days = 365 } = req.query; // Default to 1 year to catch existing orders
     
     // Calculate date range
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(endDate.getDate() - parseInt(days));
     
-    // Get order status counts
+    // Check total orders in period
+    const totalOrdersInPeriod = await Order.countDocuments({
+      createdAt: { $gte: startDate, $lt: endDate }
+    });
+    
+    // Get order status counts (try all time first)
+    const orderStatusCountsAllTime = await Order.aggregate([
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+    
+    // Get order status counts for the period
     const orderStatusCounts = await Order.aggregate([
       { $match: { createdAt: { $gte: startDate, $lt: endDate } } },
       { $group: { _id: "$status", count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]);
     
+    // Calculate revenue by status - only for approved/completed
+    const revenueByStatus = await Order.aggregate([
+      { 
+        $match: { 
+          createdAt: { $gte: startDate, $lt: endDate },
+          status: { $in: ["approved", "completed"] }
+        } 
+      },
+      { 
+        $group: { 
+          _id: "$status", 
+          count: { $sum: 1 },
+          revenue: { $sum: { $ifNull: ["$insuranceFee", { $multiply: ["$totalPrice", 0.1] }] } }
+        } 
+      },
+      { $sort: { revenue: -1 } }
+    ]);
+    
+    // Use all-time data if period data is empty
+    const finalStatusCounts = orderStatusCounts.length > 0 ? orderStatusCounts : orderStatusCountsAllTime;
+    
     // Format the response
-    const formattedResult = orderStatusCounts.map(item => ({
+    const formattedStatusCounts = finalStatusCounts.map(item => ({
       status: item._id,
       count: item.count
     }));
     
+    const formattedRevenueByStatus = revenueByStatus.map(item => ({
+      status: item._id,
+      count: item.count,
+      revenue: item.revenue
+    }));
+    
     res.json({
-      orderStatusCounts: formattedResult,
+      orderStatusCounts: formattedStatusCounts,
+      revenueByStatus: formattedRevenueByStatus,
+      totalOrdersInPeriod,
+      usedAllTimeData: orderStatusCounts.length === 0,
       timeRange: {
         start: startDate,
         end: endDate
