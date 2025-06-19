@@ -156,7 +156,7 @@ exports.verifyCodeAndSignup = async (req, res) => {
         );
 
         // Log successful signup
-        console.log(`User successfully registered and verified: ${newUser.email} at ${new Date().toISOString()}`);
+
 
         res.status(201).json({
             message: 'Email verified successfully! Your account has been created.',
@@ -373,7 +373,7 @@ exports.resetPassword = async (req, res) => {
         await user.save();
 
         // Log successful password reset (for security monitoring)
-        console.log(`Password reset successful for user: ${user.email} at ${new Date().toISOString()}`);
+
 
         res.status(200).json({ 
             message: 'Password has been reset successfully. You can now login with your new password.' 

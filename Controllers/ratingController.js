@@ -40,7 +40,7 @@ exports.addRating = async (req, res) => {
     }
 
     // Check if the user has a completed order with payment for this listing
-    console.log('[DEBUG] Checking order for rating:', { userId, listingId });
+
     const userOrder = await Order.findOne({
       listing: listingId,
       user: userId,
@@ -50,10 +50,10 @@ exports.addRating = async (req, res) => {
         { status: "approved" }
       ]
     });
-    console.log('[DEBUG] Order found for rating:', userOrder);
+    
 
     if (!userOrder) {
-      console.log('[DEBUG] No valid order found, blocking rating');
+      
       return res.status(403).json({
         success: false,
         message: "You can only rate items you have paid for and ordered",
@@ -135,7 +135,7 @@ exports.updateRating = async (req, res) => {
     }
 
     // Check if the user has a completed order with payment for this listing
-    console.log('[DEBUG] Checking order for updating rating:', { userId, listingId: rating.listing });
+    
     const userOrder = await Order.findOne({
       listing: rating.listing,
       user: userId,
@@ -145,10 +145,10 @@ exports.updateRating = async (req, res) => {
         { status: "approved" }
       ]
     });
-    console.log('[DEBUG] Order found for updating rating:', userOrder);
+    
 
     if (!userOrder) {
-      console.log('[DEBUG] No valid order found, blocking rating update');
+      
       return res.status(403).json({
         success: false,
         message: "You can only update ratings for items you have paid for and ordered",
@@ -202,7 +202,7 @@ exports.deleteRating = async (req, res) => {
     }
 
     // Check if the user has a completed order with payment for this listing
-    console.log('[DEBUG] Checking order for deleting rating:', { userId, listingId: rating.listing });
+    
     const userOrder = await Order.findOne({
       listing: rating.listing,
       user: userId,
@@ -212,10 +212,10 @@ exports.deleteRating = async (req, res) => {
         { status: "approved" }
       ]
     });
-    console.log('[DEBUG] Order found for deleting rating:', userOrder);
+    
 
     if (!userOrder) {
-      console.log('[DEBUG] No valid order found, blocking rating deletion');
+      
       return res.status(403).json({
         success: false,
         message: "You can only delete ratings for items you have paid for and ordered",

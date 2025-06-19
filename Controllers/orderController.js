@@ -9,9 +9,7 @@ exports.processPayment = async (req, res) => {
     const { cartId, startDate, endDate, rentalDays, totalPrice: requestTotalPrice } = req.body;
     const userId = req.user.userId;
 
-    console.log("Processing payment for user:", userId);
-    console.log("Cart ID:", cartId);
-    console.log("Request body:", req.body);
+
 
     // Get cart items with fully populated listing data
     const cart = await Cart.findById(cartId).populate({
@@ -26,7 +24,7 @@ exports.processPayment = async (req, res) => {
       return res.status(400).json({ message: "Cart is empty" });
     }
 
-    console.log("Cart items for payment:", JSON.stringify(cart.items, null, 2));
+    
 
     // Check if any items are already rented
     for (const item of cart.items) {
@@ -96,7 +94,7 @@ exports.processPayment = async (req, res) => {
         // Ensure we have a valid totalPrice (minimum 1)
         itemTotalPrice = Math.max(1, itemTotalPrice);
         
-        console.log(`Creating order for listing: ${listing.name}, Rate: ${listing.rentalRate}, Days: ${itemRentalDays}, Base Price: ${basePrice}, Insurance: ${insuranceFee}, Total: ${itemTotalPrice}`);
+
         
         // Generate start and end dates if they're not provided
         const currentDate = new Date();
@@ -116,11 +114,8 @@ exports.processPayment = async (req, res) => {
           isActive: true
         };
         
-        console.log("Creating order with data:", orderData);
-        
         const order = new Order(orderData);
         const savedOrder = await order.save();
-        console.log("Order saved successfully:", savedOrder._id);
         
         // Update the listing status to 'reserved'
         listing.status = "reserved";
@@ -130,7 +125,7 @@ exports.processPayment = async (req, res) => {
         
         try {
           await listing.save();
-          console.log(`Listing ${listing._id} status updated to 'reserved' until ${orderData.endDate}`);
+
         } catch (listingError) {
           console.warn("Error updating listing status:", listingError);
           // Continue with the order creation even if listing update fails
@@ -191,23 +186,20 @@ exports.getUserOrders = async (req, res) => {
 exports.getOwnerOrders = async (req, res) => {
   try {
     const userId = req.user.userId;
-    console.log("Fetching owner orders for user ID:", userId);
+
     
     // Find orders where this user is the owner
     const orders = await Order.find({ owner: userId })
       .populate("listing")
       .populate("user", "firstName lastName email");
     
-    console.log(`Found ${orders.length} orders for owner ${userId}`);
+    
     
     // If no orders found, let's check if there are any orders at all
     if (orders.length === 0) {
       const allOrders = await Order.find({}).select('_id owner');
-      console.log("All orders in system:", allOrders);
-      
       // Check if the user owns any listings
       const userListings = await Listing.find({ owner: userId }).select('_id');
-      console.log("Listings owned by user:", userListings);
     }
     
     res.json(orders);
@@ -254,18 +246,16 @@ exports.updateOrderStatus = async (req, res) => {
       if (status === "approved") {
         // If approved, set to rented
         listing.status = "rented";
-        console.log(`Listing ${listing._id} status updated to 'rented'`);
+        
       } else if (status === "rejected" || status === "cancelled") {
         // If rejected or cancelled, set back to available
         listing.status = "available";
         listing.reservedUntil = null;
         order.isActive = false;
-        console.log(`Listing ${listing._id} status updated to 'available'`);
       } else if (status === "completed") {
         // If completed, set back to available
         listing.status = "available";
         listing.reservedUntil = null;
-        console.log(`Listing ${listing._id} status updated to 'available'`);
       }
       await listing.save();
     }

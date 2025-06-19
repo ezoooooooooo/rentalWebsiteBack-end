@@ -8,9 +8,7 @@ const addToCart = async (req, res) => {
     const { listingId, rentalDays = 1 } = req.body;
     const userId = req.user.userId;
 
-    console.log("Adding to cart - User ID:", userId);
-    console.log("Listing ID:", listingId);
-    console.log("Rental Days:", rentalDays);
+
 
     if (!userId) {
       return res.status(401).json({
@@ -44,11 +42,11 @@ const addToCart = async (req, res) => {
 
     // Find user's cart
     let cart = await Cart.findOne({ user: userId });
-    console.log("Existing cart:", cart);
+    
 
     if (!cart) {
       cart = new Cart({ user: userId, items: [] });
-      console.log("Created new cart:", cart);
+      
     }
 
     // Check if item already exists in cart
@@ -66,7 +64,7 @@ const addToCart = async (req, res) => {
       cart.items.push({ listing: listingId, rentalDays });
       await cart.save();
       await cart.populate("items.listing", "name rentalRate images");
-      console.log("Updated cart:", cart);
+
 
       return res.status(200).json({
         success: true,
@@ -147,17 +145,7 @@ const removeFromCart = async (req, res) => {
         .json({ success: false, message: "Cart not found" });
     }
 
-    // Log before filtering
-    console.log("Cart items before removal:", cart.items);
-    console.log("Item ID to remove:", itemId);
-
-    // Fix: Remove by `listing` instead of `_id`
-    cart.items.forEach((item) =>
-      console.log("Item ID in cart:", item._id, "Listing ID:", item.listing)
-    );
     cart.items = cart.items.filter((item) => item._id.toString() !== itemId);
-
-    console.log("Cart items after removal:", cart.items);
     await cart.save();
 
     res

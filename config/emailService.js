@@ -66,7 +66,7 @@ const sendVerificationCode = async (email, verificationCode, firstName) => {
         };
 
         const result = await transporter.sendMail(mailOptions);
-        console.log('Verification code sent successfully:', result.messageId);
+  
         return { success: true, messageId: result.messageId };
     } catch (error) {
         console.error('Error sending verification code:', error);
@@ -131,7 +131,7 @@ const sendPasswordResetCode = async (email, resetCode) => {
         };
 
         const result = await transporter.sendMail(mailOptions);
-        console.log('Password reset code sent successfully:', result.messageId);
+  
         return { success: true, messageId: result.messageId };
     } catch (error) {
         console.error('Error sending password reset code:', error);

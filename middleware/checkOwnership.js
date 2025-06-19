@@ -6,9 +6,7 @@ const checkNotOwner = async (req, res, next) => {
     const userId = req.user ? req.user.userId : null;
 
     // ✅ Debugging logs
-    console.log("Middleware checkNotOwner called");
-    console.log("Received listingId:", listingId);
-    console.log("Logged-in userId:", userId);
+    
 
     if (!listingId) {
       return res.status(400).json({ success: false, message: 'Listing ID is required' });

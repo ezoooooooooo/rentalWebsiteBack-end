@@ -97,18 +97,13 @@ exports.createListing = async (req, res) => {
  }
 };
 exports.editListing = async (req, res) => {
-    console.log("📩 Received removedImages from frontend:", req.body.removedImages);
+  
     
     const { id } = req.params; // Listing ID
     const { name, description, category, rentalRate, removedImages } = req.body;
     const userId = req.user ? req.user.userId : null; // Check if req.user exists
 
-    console.log('🟢 Detailed Listing Update Request');
-    console.log('🆔 Listing ID:', id);
-    console.log('📄 Request Body:', JSON.stringify(req.body, null, 2));
-    console.log('📸 Uploaded Files:', req.files);
-    console.log('👤 User ID:', userId);
-    console.log('🗑️ Removed Images (Raw):', removedImages);
+
 
     try {
         // Find the listing by ID
@@ -119,8 +114,7 @@ exports.editListing = async (req, res) => {
             return res.status(404).json({ message: 'Listing not found' });
         }
 
-        console.log('🔍 Found listing:', listing);
-        console.log('👤 Listing owner ID:', listing.owner);
+        
 
         // Check if the authenticated user is the owner of the listing
         if (!userId || !listing.owner) {
@@ -141,7 +135,7 @@ exports.editListing = async (req, res) => {
                     ? JSON.parse(removedImages) 
                     : removedImages;
                 
-                console.log('🔍 Processed Remove Images:', removeImages);
+        
             } catch (error) {
                 console.error('❌ Invalid removedImages format:', error);
                 return res.status(400).json({ message: 'Invalid removedImages format' });
@@ -158,7 +152,7 @@ exports.editListing = async (req, res) => {
         if (removeImages.length > 0) {
             const initialImageCount = listing.images.length;
 
-            console.log('🔍 Current Images Before Deletion:', listing.images.map(img => img.public_id));
+  
 
             listing.images = listing.images.filter(image => {
                 const shouldRemove = removeImages.some(
@@ -168,14 +162,9 @@ exports.editListing = async (req, res) => {
                 );
 
                 if (shouldRemove) {
-                    console.log('🗑️ Removing image:', image.public_id);
-                
                     if (cloudinary.uploader && cloudinary.uploader.destroy) {
                         cloudinary.uploader.destroy(image.public_id)
-                            .then(result => console.log("✅ Cloudinary deletion:", result))
                             .catch(err => console.error("❌ Cloudinary deletion error:", err));
-                    } else {
-                        console.error("❌ Cloudinary uploader is undefined");
                     }
                 }
                 
@@ -183,8 +172,7 @@ exports.editListing = async (req, res) => {
                 return !shouldRemove; // Keep only images that are NOT in `removedImages`
             });
 
-            console.log(`🖼️ Images updated: ${initialImageCount} → ${listing.images.length}`);
-            console.log('🔍 Current Images After Deletion:', listing.images.map(img => img.public_id));
+
         }
 
         // **Adding new images (if uploaded)**
@@ -194,12 +182,12 @@ exports.editListing = async (req, res) => {
                 public_id: file.filename
             }));
 
-            console.log('📸 Adding New Images:', newImages);
+
 
             listing.images.push(...newImages); // ✅ Append new images instead of replacing
         }
 
-        console.log('✅ Updated listing:', listing);
+
 
         // Save the updated listing
         await listing.save();
@@ -245,7 +233,7 @@ exports.deleteListing = async (req, res) => {
 exports.getUserListings = async (req, res) => {
     try {
         const userId = req.user.userId;
-        console.log("Fetching listings for user:", userId);
+    
 
         // Fetch listings where `owner` matches the logged-in user
         const userListings = await Listing.find({ owner: userId });

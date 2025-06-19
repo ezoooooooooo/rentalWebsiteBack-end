@@ -39,17 +39,17 @@ exports.addRenterRating = async (req, res) => {
     }
 
     // Check if the rater (owner) has had a completed rental with this renter
-    console.log('[DEBUG] Checking order for renter rating:', { raterId, renterId });
+
     const rentalOrder = await Order.findOne({
       owner: raterId,
       user: renterId,
       paymentStatus: "completed",
       status: { $in: ["completed", "approved"] }
     });
-    console.log('[DEBUG] Order found for renter rating:', rentalOrder);
+    
 
     if (!rentalOrder) {
-      console.log('[DEBUG] No valid rental found, blocking renter rating');
+      
       return res.status(403).json({
         success: false,
         message: "You can only rate renters who have completed rentals with you",
@@ -136,17 +136,17 @@ exports.updateRenterRating = async (req, res) => {
     }
 
     // Check if the rater (owner) has had a completed rental with this renter
-    console.log('[DEBUG] Checking order for updating renter rating:', { raterId, renterId: rating.renter });
+    
     const rentalOrder = await Order.findOne({
       owner: raterId,
       user: rating.renter,
       paymentStatus: "completed",
       status: { $in: ["completed", "approved"] }
     });
-    console.log('[DEBUG] Order found for updating renter rating:', rentalOrder);
+    
 
     if (!rentalOrder) {
-      console.log('[DEBUG] No valid rental found, blocking renter rating update');
+      
       return res.status(403).json({
         success: false,
         message: "You can only update ratings for renters who have completed rentals with you",
@@ -205,17 +205,17 @@ exports.deleteRenterRating = async (req, res) => {
     }
 
     // Check if the rater (owner) has had a completed rental with this renter
-    console.log('[DEBUG] Checking order for deleting renter rating:', { raterId, renterId: rating.renter });
+    
     const rentalOrder = await Order.findOne({
       owner: raterId,
       user: rating.renter,
       paymentStatus: "completed",
       status: { $in: ["completed", "approved"] }
     });
-    console.log('[DEBUG] Order found for deleting renter rating:', rentalOrder);
+    
 
     if (!rentalOrder) {
-      console.log('[DEBUG] No valid rental found, blocking renter rating deletion');
+      
       return res.status(403).json({
         success: false,
         message: "You can only delete ratings for renters who have completed rentals with you",
