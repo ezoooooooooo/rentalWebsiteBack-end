@@ -106,15 +106,29 @@ const getCart = async (req, res) => {
       });
     }
 
-    // Calculate total price
-    const totalPrice = cart.items.reduce(
+    // Calculate total price breakdown
+    const subtotal = cart.items.reduce(
       (sum, item) => sum + item.listing.rentalRate * item.rentalDays,
       0
     );
+    
+    const platformFee = Math.round(subtotal * 0.1); // 10% platform fee
+    const insuranceFee = Math.round(subtotal * 0.1); // 10% insurance fee
+    const totalPrice = subtotal + platformFee + insuranceFee;
 
     res
       .status(200)
-      .json({ success: true, cart, totalPrice: totalPrice.toFixed(2) });
+      .json({ 
+        success: true, 
+        cart, 
+        priceBreakdown: {
+          subtotal: subtotal,
+          platformFee: platformFee,
+          insuranceFee: insuranceFee,
+          totalPrice: totalPrice
+        },
+        totalPrice: totalPrice.toFixed(2) 
+      });
   } catch (error) {
     console.error("🚨 Error fetching cart:", error);
     res.status(500).json({
@@ -234,16 +248,26 @@ const updateCartItem = async (req, res) => {
     await cart.save();
     await cart.populate("items.listing", "name rentalRate images");
 
-    // Calculate total price
-    let totalPrice = 0;
+    // Calculate total price breakdown
+    let subtotal = 0;
     cart.items.forEach((item) => {
-      totalPrice += item.listing.rentalRate * item.rentalDays;
+      subtotal += item.listing.rentalRate * item.rentalDays;
     });
+    
+    const platformFee = Math.round(subtotal * 0.1); // 10% platform fee
+    const insuranceFee = Math.round(subtotal * 0.1); // 10% insurance fee
+    const totalPrice = subtotal + platformFee + insuranceFee;
 
     res.status(200).json({
       success: true,
       message: "Cart item updated",
       cart,
+      priceBreakdown: {
+        subtotal: subtotal,
+        platformFee: platformFee,
+        insuranceFee: insuranceFee,
+        totalPrice: totalPrice
+      },
       totalPrice: parseFloat(totalPrice.toFixed(2)),
     });
   } catch (error) {

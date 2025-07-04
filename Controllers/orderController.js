@@ -64,8 +64,7 @@ exports.processPayment = async (req, res) => {
         const itemRentalDays = item.rentalDays || rentalDays || 1;
         
         // Use the totalPrice from the request if provided, otherwise calculate it
-        let itemTotalPrice;
-        let basePrice;
+        let subtotal;
         
         if (requestTotalPrice) {
           // If a single totalPrice is provided for all items, divide it proportionally
@@ -75,24 +74,26 @@ exports.processPayment = async (req, res) => {
               return sum + (cartItem.listing.rentalRate * (cartItem.rentalDays || rentalDays || 1));
             }, 0);
             
-            basePrice = Math.round((thisItemRate / allItemsTotal) * requestTotalPrice);
+            // Calculate subtotal (base price without fees)
+            subtotal = Math.round((thisItemRate / allItemsTotal) * (requestTotalPrice / 1.2)); // Divide by 1.2 to get base price (since total includes 20% fees)
           } else {
-            // If there's only one item, use the provided totalPrice
-            basePrice = requestTotalPrice;
+            // If there's only one item, calculate subtotal from provided total
+            subtotal = Math.round(requestTotalPrice / 1.2); // Remove both 10% fees to get base price
           }
         } else {
           // Calculate based on rental rate and days
-          basePrice = listing.rentalRate * itemRentalDays;
+          subtotal = listing.rentalRate * itemRentalDays;
         }
         
-        // Calculate insurance fee (10% of the base price)
-        const insuranceFee = Math.round(basePrice * 0.1);
+        // Calculate both fees (10% each)
+        const platformFee = Math.round(subtotal * 0.1);
+        const insuranceFee = Math.round(subtotal * 0.1);
         
-        // Add insurance fee to the base price
-        itemTotalPrice = basePrice + insuranceFee;
+        // Calculate total price (subtotal + both fees)
+        const itemTotalPrice = subtotal + platformFee + insuranceFee;
         
         // Ensure we have a valid totalPrice (minimum 1)
-        itemTotalPrice = Math.max(1, itemTotalPrice);
+        const finalTotalPrice = Math.max(1, itemTotalPrice);
         
 
         
@@ -108,7 +109,10 @@ exports.processPayment = async (req, res) => {
           startDate: startDate ? new Date(startDate) : currentDate,
           endDate: endDate ? new Date(endDate) : calculatedEndDate,
           rentalDays: itemRentalDays,
-          totalPrice: itemTotalPrice,
+          subtotal: subtotal,
+          platformFee: platformFee,
+          insuranceFee: insuranceFee,
+          totalPrice: finalTotalPrice,
           paymentStatus: "completed",
           status: "pending",
           isActive: true
@@ -211,7 +215,83 @@ exports.getOwnerOrders = async (req, res) => {
   }
 };
 
-// Update order status (for owner)
+// Cancel order (dedicated endpoint)
+exports.cancelOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.userId;
+
+    const order = await Order.findById(orderId).populate("listing");
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Only allow the user who made the order to cancel it
+    if (order.user.toString() !== userId.toString()) {
+      return res.status(403).json({ message: "You can only cancel your own orders" });
+    }
+
+    // Check if order can be cancelled
+    if (order.status === "completed") {
+      return res.status(400).json({ message: "Cannot cancel completed orders" });
+    }
+
+    if (order.status === "cancelled") {
+      return res.status(400).json({ message: "Order is already cancelled" });
+    }
+
+    // Ensure backward compatibility for existing orders
+    if (!order.subtotal && order.totalPrice) {
+      order.subtotal = Math.round(order.totalPrice / 1.2);
+    }
+    if (!order.platformFee && order.subtotal) {
+      order.platformFee = Math.round(order.subtotal * 0.1);
+    }
+    if (!order.insuranceFee && order.subtotal) {
+      order.insuranceFee = Math.round(order.subtotal * 0.1);
+    }
+
+    // Update order status to cancelled
+    order.status = "cancelled";
+    order.isActive = false;
+    
+    // Update listing status back to available
+    if (order.listing) {
+      const listing = await Listing.findById(order.listing._id);
+      if (listing) {
+        listing.status = "available";
+        listing.reservedUntil = null;
+        await listing.save();
+      }
+    }
+    
+    await order.save();
+
+    // Create notification for the owner
+    const notification = new Notification({
+      recipient: order.owner,
+      sender: userId,
+      type: "order_cancelled",
+      order: order._id,
+      message: `Order for ${order.listing?.name || 'the item'} has been cancelled by the customer`,
+    });
+
+    await notification.save();
+
+    res.json({ 
+      message: "Order cancelled successfully", 
+      order: order
+    });
+  } catch (error) {
+    console.error("Error cancelling order:", error);
+    res.status(500).json({ 
+      message: "Error cancelling order", 
+      error: error.message 
+    });
+  }
+};
+
+// Update order status (for owner) - Fixed version
 exports.updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -238,26 +318,39 @@ exports.updateOrderStatus = async (req, res) => {
       }
     }
 
+    // Ensure backward compatibility for existing orders
+    if (!order.subtotal && order.totalPrice) {
+      order.subtotal = Math.round(order.totalPrice / 1.2);
+    }
+    if (!order.platformFee && order.subtotal) {
+      order.platformFee = Math.round(order.subtotal * 0.1);
+    }
+    if (!order.insuranceFee && order.subtotal) {
+      order.insuranceFee = Math.round(order.subtotal * 0.1);
+    }
+
     order.status = status;
     
     // Update listing status based on order status
-    const listing = await Listing.findById(order.listing._id);
-    if (listing) {
-      if (status === "approved") {
-        // If approved, set to rented
-        listing.status = "rented";
-        
-      } else if (status === "rejected" || status === "cancelled") {
-        // If rejected or cancelled, set back to available
-        listing.status = "available";
-        listing.reservedUntil = null;
-        order.isActive = false;
-      } else if (status === "completed") {
-        // If completed, set back to available
-        listing.status = "available";
-        listing.reservedUntil = null;
+    if (order.listing) {
+      const listing = await Listing.findById(order.listing._id);
+      if (listing) {
+        if (status === "approved") {
+          // If approved, set to rented
+          listing.status = "rented";
+          
+        } else if (status === "rejected" || status === "cancelled") {
+          // If rejected or cancelled, set back to available
+          listing.status = "available";
+          listing.reservedUntil = null;
+          order.isActive = false;
+        } else if (status === "completed") {
+          // If completed, set back to available
+          listing.status = "available";
+          listing.reservedUntil = null;
+        }
+        await listing.save();
       }
-      await listing.save();
     }
     
     if (status === "rejected") {
@@ -271,16 +364,15 @@ exports.updateOrderStatus = async (req, res) => {
       sender: req.user.userId,
       type: `order_${status}`,
       order: order._id,
-      message: `Your order for ${order.listing.name || 'the item'} has been ${status}`,
+      message: `Your order for ${order.listing?.name || 'the item'} has been ${status}`,
     });
 
     await notification.save();
 
     res.json({ message: "Order status updated successfully", order });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error updating order status", error: error.message });
+    console.error("Error updating order status:", error);
+    res.status(500).json({ message: "Error updating order status", error: error.message });
   }
 };
 
@@ -311,4 +403,43 @@ exports.checkAvailability = async (req, res) => {
       .status(500)
       .json({ message: "Error checking availability", error: error.message });
   }
+};
+
+// Calculate fee breakdown for price display
+exports.calculateFeeBreakdown = async (req, res) => {
+  try {
+    const { subtotal } = req.body;
+    
+    if (!subtotal || subtotal <= 0) {
+      return res.status(400).json({ message: "Valid subtotal is required" });
+    }
+    
+    const platformFee = Math.round(subtotal * 0.1); // 10% platform fee
+    const insuranceFee = Math.round(subtotal * 0.1); // 10% insurance fee
+    const totalPrice = subtotal + platformFee + insuranceFee;
+    
+    res.json({
+      subtotal: subtotal,
+      platformFee: platformFee,
+      insuranceFee: insuranceFee,
+      totalPrice: totalPrice,
+      breakdown: {
+        platformFeeRate: 10,
+        insuranceFeeRate: 10,
+        totalFeeRate: 20
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error calculating fee breakdown", error: error.message });
+  }
+};
+
+module.exports = {
+  processPayment: exports.processPayment,
+  getUserOrders: exports.getUserOrders,
+  getOwnerOrders: exports.getOwnerOrders,
+  updateOrderStatus: exports.updateOrderStatus,
+  cancelOrder: exports.cancelOrder,
+  checkAvailability: exports.checkAvailability,
+  calculateFeeBreakdown: exports.calculateFeeBreakdown
 };

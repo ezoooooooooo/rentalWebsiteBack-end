@@ -28,15 +28,43 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
-  totalPrice: {
+  subtotal: {
     type: Number,
-    required: true,
+    default: function() {
+      // For existing orders, calculate subtotal from totalPrice if not provided
+      if (this.totalPrice && !this.subtotal) {
+        return Math.round(this.totalPrice / 1.2); // Remove 20% fees to get base price
+      }
+      return this.totalPrice || 0;
+    },
+  },
+  platformFee: {
+    type: Number,
+    default: function() {
+      // For existing orders, calculate platform fee if not provided
+      if (this.subtotal) {
+        return Math.round(this.subtotal * 0.1);
+      } else if (this.totalPrice) {
+        return Math.round((this.totalPrice / 1.2) * 0.1);
+      }
+      return 0;
+    },
   },
   insuranceFee: {
     type: Number,
     default: function() {
-      return this.totalPrice * 0.1; // 10% of total price
+      // For existing orders, calculate insurance fee if not provided
+      if (this.subtotal) {
+        return Math.round(this.subtotal * 0.1);
+      } else if (this.totalPrice) {
+        return Math.round((this.totalPrice / 1.2) * 0.1);
+      }
+      return Math.round(this.totalPrice * 0.1); // Fallback to old calculation
     },
+  },
+  totalPrice: {
+    type: Number,
+    required: true,
   },
   status: {
     type: String,

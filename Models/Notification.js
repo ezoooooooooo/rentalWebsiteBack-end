@@ -17,6 +17,7 @@ const notificationSchema = new mongoose.Schema({
       "order_approved",
       "order_rejected",
       "order_completed",
+      "order_cancelled",
     ],
     required: true,
   },
